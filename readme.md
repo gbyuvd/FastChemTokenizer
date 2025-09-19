@@ -44,7 +44,7 @@ Core's vocab length = 781 (after pruning)
 | **UNK token rate**             | **0.0000%**       | 0.0000%              | 0.0000%             |
 | **1000 encodes (benchmark)**   | **0.0081s**       | 2.9020s              | 2.9020s             |
 
-✅ Even though 1.32x slower, it produces **2.65x lesser tokens**  
+✅ Even though 1.32x slower, it produces **2.65x less tokens**  
 ✅ **~61x memory saving with tails** and **~25x** with core
 
 ## 🧩 Vocabulary (SMILES)
@@ -206,6 +206,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
