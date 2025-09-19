@@ -21,12 +21,12 @@ The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datas
 | **Avg sequence length**        | **21.49 tokens**  | 41.99 tokens         | 50.57 tokens        |
 | **Throughput**                 | **12,448/sec**    | 6,326/sec            | 10,658/sec          |
 | **Peak memory usage**          | **17.08 MB**      | 259.45 MB            | 387.43 MB           |
-| **UNK token rate**             | **0.0000%**       | 0.0000%              | ~0.0000% (non-zero)             |
+| **UNK token rate**             | **0.0000%**       | 0.0000%              | ~0.0000% (non-zero) |
 | **1000 encodes (benchmark)**   | **0.0029s**       | 1.6598s              | 0.5491s             |
 
 ✅ **1.97x faster** than ChemBERTa  
 ✅ **1.50x faster** than gen-mlm-cismi-bert  
-✅ **~19x memory saving** compared to both of the above tokenizer
+✅ **~19x memory saving** compared to both of the above tokenizer  
 ✅ **No indexing errors** (avoids >512 token sequences)  
 ✅ **Zero unknown tokens** on validation set
 
@@ -206,6 +206,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
