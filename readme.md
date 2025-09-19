@@ -6,14 +6,15 @@
 
 ## 🚀 Overview
 
-`FastChemTokenizer` is a **trie-based, longest-match-first tokenizer** specifically designed for efficient tokenization of **SMILES strings** in molecular language modeling. The tokenizer is built from scratch for speed and compactness, it outperforms popular tokenizers like [ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/)'s while maintaining 0% UNK rate on ~2.7M dataset and compatibility with Hugging Face `transformers`. In n-grams building, this project uses [seyonec/ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/)'s as early tokenizer for determining n-grams using its token_ids, then uses information-theoretic filtering (entropy reduction, PMI, internal entropy) to extract meaningful statistical chemical motifs — then balances 391 backbone (functional) and 391 tail fragments for structural coverage.
+`FastChemTokenizer` is a **trie-based, longest-match-first tokenizer** specifically designed for efficient tokenization of **SMILES and SELFIES strings** in molecular language modeling. The tokenizer is built from scratch for speed and compactness, it outperforms popular tokenizers like [ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/)'s while maintaining 0% UNK rate on ~2.7M dataset and compatibility with Hugging Face `transformers`. In n-grams building, this project uses [seyonec/ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/)'s as early tokenizer for determining n-grams using its token_ids, then uses information-theoretic filtering (entropy reduction, PMI, internal entropy) to extract meaningful statistical chemical motifs — then balances 391 backbone (functional) and 391 tail fragments for structural coverage.
 
-Trained on ~2.7M valid SMILES built and curated from ChemBL34 (Zdrazil _et al._ 2023), COCONUTDB (Sorokina _et al._ 2021), and Supernatural3 (Gallo _et al._ 2023) dataset; from resulting 76K n-grams -> pruned to **1,238 tokens**, including backbone/tail motifs and special tokens.
+Trained on ~2.7M valid SMILES and SELFIES built and curated from ChemBL34 (Zdrazil _et al._ 2023), COCONUTDB (Sorokina _et al._ 2021), and Supernatural3 (Gallo _et al._ 2023) dataset; from resulting 76K n-grams -> pruned to **1,238 tokens**, including backbone/tail motifs and special tokens.
 
 The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datasets/gbyuvd/bioactives-naturals-smiles-molgen).
 
 ## ⚡ Performance Highlights
 
+#### SMILES
 | Metric                          | FastChemTokenizer | [ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/) Tokenizer | [gen-mlm-cismi-bert](https://huggingface.co/smostafanejad/gen-mlm-cismi-bert-wordpiece) |
 |--------------------------------|-------------------|----------------------|---------------------|
 | **Avg time per SMILES**        | **0.0803 ms**     | 0.1581 ms            | 0.0938 ms           |
@@ -25,10 +26,26 @@ The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datas
 
 ✅ **1.97x faster** than ChemBERTa  
 ✅ **1.50x faster** than gen-mlm-cismi-bert  
+✅ **~19x memory saving** compared to both of the above tokenizer
 ✅ **No indexing errors** (avoids >512 token sequences)  
 ✅ **Zero unknown tokens** on validation set
 
+#### SELFIES
+```
+Core's vocab length = 781 (after pruning) 
+        with tails = 1161 (after pruning) 
+```
+| Metric                         | FastChemTokenizer-WTails | FastChemTokenizer-Core | [opti-chemfie-experiment-1](https://huggingface.co/gbyuvd/bionat-selfies-gen-tokenizer-wordlevel) |
+|--------------------------------|-------------------|----------------------|---------------------|
+| **Avg time per SMILES**        | 0.1548 ms         | 0.1700 ms            | **0.1170 ms**       |
+| **Avg sequence length**        | **20.34 tokens**  | 33.22 tokens         | 53.98 tokens        |
+| **Throughput**                 | 6,461/sec         | 5,882/sec            | **8,549/sec**       |
+| **Peak memory usage**          | **7.96 MB**       | 19.77 MB             | 488.03 MB           |
+| **UNK token rate**             | **0.0000%**       | 0.0000%              | 0.0000%             |
+| **1000 encodes (benchmark)**   | **0.0081s**       | 2.9020s              | 2.9020s             |
 
+✅ Even though 1.32x slower, it produces **2.65x lesser tokens**  
+✅ **~61x memory saving with tails** and **~25x** with core
 
 ## 🧩 Vocabulary
 
@@ -46,6 +63,7 @@ The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datas
 - **HF Compatible**: Implements `__call__`, `encode_plus`, `batch_encode_plus`, `save_pretrained`, `from_pretrained`
 - **Memory Efficient**: Trie traversal and cache
 
+**for SMILES**
 ```python
 from FastChemTokenizer import FastChemTokenizer
 
@@ -65,9 +83,28 @@ tokenizer.decode_with_trace(encoded)
 #  [001] ID=  640 → 'cc1'
 ```
 
+**for SELFIES**
+```python
+from FastChemTokenizer import FastChemTokenizerSelfies
+
+tokenizer = FastChemTokenizerSelfies.from_pretrained("./selftok_wtails") # change to *_core for w/o tails
+benzene = "[C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]" # please make sure whitespaced input
+encoded = tokenizer.encode(benzene)
+print("✅ Encoded:", encoded)
+decoded = tokenizer.decode(encoded)
+print("✅ Decoded:", decoded)
+tokenizer.decode_with_trace(encoded)
+
+# ✅ Encoded: [70]
+# ✅ Decoded: [C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]
+
+# 🔍 Decoding 1 tokens:
+#  [000] ID=   70 → '[C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]'
+```
 
 ## 📦 Installation & Usage
 
+0. Make sure you have all the reqs packages, possibly can be run with different versions
 1. Clone this repository to a directory
 2. Load with:
 ```python
@@ -105,7 +142,7 @@ This project is an ongoing **experiment** — all contributions are welcome!
 
 ## ✍️ On-going
 - [>] Validation on VAE and Causal LM Transformer
-- [>] Finish vocab construction on SELFIES
+- [x] Finish vocab construction on SELFIES
 - [ ] Write technical report on methods, results
 
 ## 📄 License
@@ -169,8 +206,6 @@ Apache 2.0
 }
 ```
 ---
-
-
 
 
 

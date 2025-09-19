@@ -1,0 +1,4 @@
+[20 Sept 2025]
+- Add basic SELFIES tokenizer function
+- Upload both core and tailed SELFIES vocab
+- Update README to include SELFIES evals
