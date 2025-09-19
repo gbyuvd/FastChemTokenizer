@@ -271,9 +271,9 @@ class FastChemTokenizer:
 
         if kwargs.get("return_tensors") == "pt":
             def to_tensor_list(lst):
-                # Use torch.tensor for safety — avoids "copy construct from tensor" warning
-                return [torch.tensor(item, dtype=torch.long) for item in lst]
-
+                # Fixed: Handle both tensor and non-tensor items properly
+                return [item.clone().detach() if isinstance(item, torch.Tensor) 
+                    else torch.tensor(item, dtype=torch.long) for item in lst]
             batched = {
                 k: torch.nn.utils.rnn.pad_sequence(
                     to_tensor_list(v),
@@ -570,9 +570,9 @@ class FastChemTokenizerSelfies:
 
         if kwargs.get("return_tensors") == "pt":
             def to_tensor_list(lst):
-                # Use torch.tensor for safety — avoids "copy construct from tensor" warning
-                return [torch.tensor(item, dtype=torch.long) for item in lst]
-
+                # Fixed: Handle both tensor and non-tensor items properly
+                return [item.clone().detach() if isinstance(item, torch.Tensor) 
+                    else torch.tensor(item, dtype=torch.long) for item in lst]
             batched = {
                 k: torch.nn.utils.rnn.pad_sequence(
                     to_tensor_list(v),

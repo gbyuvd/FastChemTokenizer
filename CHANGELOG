@@ -2,3 +2,4 @@
 - Add basic SELFIES tokenizer function
 - Upload both core and tailed SELFIES vocab
 - Update README to include SELFIES evals
+- Handle both tensor and non-tensor items properly
