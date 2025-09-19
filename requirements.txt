@@ -1,0 +1,7 @@
+datasets==4.0.0
+numpy==2.3.3
+polars==1.33.1
+pyarrow==21.0.0
+torch==2.6.0+cu126
+tqdm==4.67.1
+transformers==4.56.1
