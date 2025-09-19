@@ -1,6 +1,4 @@
 
----
-
 # 🧪 FastChemTokenizer — A High-Performance SMILES Tokenizer built via Info-Theoretic Motif Mining
 
 > **Optimized for chemical language modeling. 2x faster, 50% shorter sequences, minimal memory. Built with entropy-guided n-gram selection.**
@@ -170,4 +168,5 @@ Apache 2.0
 }
 ```
 ---
+
 
