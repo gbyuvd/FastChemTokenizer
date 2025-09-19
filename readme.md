@@ -43,7 +43,7 @@ Trained on ~2.7M valid SMILES built and curated from ChemBL34 (Zdrazil _et al._ 
 - **Algorithm**: Trie-based longest-prefix-match (no regex, no BPE)
 - **Caching**: `@lru_cache` for repeated string encoding
 - **HF Compatible**: Implements `__call__`, `encode_plus`, `batch_encode_plus`, `save_pretrained`, `from_pretrained`
-- **Memory Efficient**: No token set — pure trie traversal
+- **Memory Efficient**: Trie traversal and cache
 
 ```python
 from FastChemTokenizer import FastChemTokenizer
@@ -168,5 +168,6 @@ Apache 2.0
 }
 ```
 ---
+
 
 
