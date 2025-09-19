@@ -10,7 +10,7 @@
 
 Trained on ~2.7M valid SMILES built and curated from ChemBL34 (Zdrazil _et al._ 2023), COCONUTDB (Sorokina _et al._ 2021), and Supernatural3 (Gallo _et al._ 2023) dataset; from resulting 76K n-grams -> pruned to **1,238 tokens**, including backbone/tail motifs and special tokens.
 
-The "comb_smi.csv" dataset can be downloaded (here)[https://huggingface.co/datasets/gbyuvd/bioactives-naturals-smiles-molgen].
+The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datasets/gbyuvd/bioactives-naturals-smiles-molgen).
 
 ## ⚡ Performance Highlights
 
@@ -169,6 +169,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
