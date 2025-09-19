@@ -47,7 +47,7 @@ Core's vocab length = 781 (after pruning)
 ✅ Even though 1.32x slower, it produces **2.65x lesser tokens**  
 ✅ **~61x memory saving with tails** and **~25x** with core
 
-## 🧩 Vocabulary
+## 🧩 Vocabulary (SMILES)
 
 - **Final vocab size**: 1,238 tokens
 - **Includes**: 391 backbone motifs + 391 tail motifs + special tokens (`<s>`, `</s>`, `<pad>`, `<unk>`, `<mask>`)
@@ -206,6 +206,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
