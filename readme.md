@@ -17,10 +17,10 @@ The "comb_smi.csv" dataset can be downloaded [here](https://huggingface.co/datas
 #### SMILES
 | Metric                          | FastChemTokenizer | [ChemBERTa](https://huggingface.co/seyonec/ChemBERTa-zinc-base-v1/) Tokenizer | [gen-mlm-cismi-bert](https://huggingface.co/smostafanejad/gen-mlm-cismi-bert-wordpiece) |
 |--------------------------------|-------------------|----------------------|---------------------|
-| **Avg time per SMILES**        | **0.0803 ms**     | 0.1581 ms            | 0.0938 ms           |
-| **Avg sequence length**        | **21.49 tokens**  | 41.99 tokens         | 50.57 tokens        |
-| **Throughput**                 | **12,448/sec**    | 6,326/sec            | 10,658/sec          |
-| **Peak memory usage**          | **17.08 MB**      | 259.45 MB            | 387.43 MB           |
+| **Avg time per SMILES**        | **0.0692 ± 0.0038 ms**  | 0.1279 ± 0.0090 ms   | 0.1029 ± 0.0038  ms |
+| **Avg sequence length**        | **21.61 ± 0.70 tokens**| 42.23 ± 1.55 tokens  | 50.86 ± 1.90 tokens |
+| **Throughput**                 | **14,448/sec**    | 7,817/sec            | 9,720/sec           |
+| **Peak memory usage**          | **12.92 MB**      | 258.00 MB            | 387.73 MB           |
 | **UNK token rate**             | **0.0000%**       | 0.0000%              | ~0.0000% (non-zero) |
 | **1000 encodes (benchmark)**   | **0.0029s**       | 1.6598s              | 0.5491s             |
 
@@ -44,7 +44,8 @@ Core's vocab length = 781 (after pruning)
 | **UNK token rate**             | **0.0000%**       | 0.0000%              | 0.0000%             |
 | **1000 encodes (benchmark)**   | **0.0081s**       | 2.9020s              | 2.9020s             |
 
-✅ Even though 1.32x slower, it produces **2.65x less tokens**  
+✅ Even though 1.32x slower, it produces **2.65x less tokens**   
+        - this slow down could be related with searching based on a lot of whitespaces between the formated SELFIES strings
 ✅ **~61x memory saving with tails** and **~25x** with core
 
 ## 🧩 Vocabulary (SMILES)
@@ -207,6 +208,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
