@@ -37,10 +37,10 @@ Core's vocab length = 781 (after pruning)
 ```
 | Metric                         | FastChemTokenizer-WTails | FastChemTokenizer-Core | [opti-chemfie-experiment-1](https://huggingface.co/gbyuvd/bionat-selfies-gen-tokenizer-wordlevel) |
 |--------------------------------|-------------------|----------------------|---------------------|
-| **Avg time per SMILES**        | 0.1548 ms         | 0.1700 ms            | **0.1170 ms**       |
-| **Avg sequence length**        | **20.34 tokens**  | 33.22 tokens         | 53.98 tokens        |
-| **Throughput**                 | 6,461/sec         | 5,882/sec            | **8,549/sec**       |
-| **Peak memory usage**          | **7.96 MB**       | 19.77 MB             | 488.03 MB           |
+| **Avg time per SMILES**        | 0.1882 ± 0.0140 ms| 0.1674 ± 0.0093 ms   | *0.1157 ± 0.0095 ms**|
+| **Avg sequence length**        | **20.46 ± 1.21 tokens**  | 33.41  ± 1.80 tokens | 54.29 ± 3.08 tokens |
+| **Throughput**                 | 5,313/sec         | 5,973/sec            | **8,642 /sec**      |
+| **Peak memory usage**          | **9.32 MB**       | 20.16 MB             | 490.13 MB           |
 | **UNK token rate**             | **0.0000%**       | 0.0000%              | 0.0000%             |
 | **1000 encodes (benchmark)**   | **0.0081s**       | 2.9020s              | 2.9020s             |
 
@@ -207,6 +207,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
