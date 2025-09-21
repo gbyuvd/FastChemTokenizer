@@ -142,7 +142,7 @@ This project is an ongoing **experiment** — all contributions are welcome!
 > 
 
 ## ✍️ On-going
-- [>] Redo evaluation with proper metrics and CI
+- [x] Redo evaluation with proper metrics and CI
 - [>] Validation on VAE and Causal LM Transformer
 - [x] Finish vocab construction on SELFIES
 - [ ] Write technical report on methods, results
@@ -208,6 +208,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
