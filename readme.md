@@ -118,6 +118,17 @@ tokenizer = FastChemTokenizer.from_pretrained("./chemtok")
 outputs = tokenizer.batch_encode_plus(smiles_list, padding=True, truncation=True, max_length=512)
 ```
 
+## 📚 Models using this tokenizer:
+- [ChemMiniQ3-HoriFIE](https://github.com/gbyuvd/ChemMiniQ3-HoriFIE)
+
+
+## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP: STILL AT 8K SAMPLES and 1 EPOCH]
+1st Epoch, on 8K samples; Latent Space Visualization based on SMILES Interpolation Validity.
+Planned: 50K samples, 2 epoch.
+
+![image/png](https://cdn-uploads.huggingface.co/production/uploads/667da868d653c0b02d6a2399/k2a58YUA_gAEF-YBCTs9W.png)
+
+![image/png](https://cdn-uploads.huggingface.co/production/uploads/667da868d653c0b02d6a2399/ZwhWS1sJ6MbMewTTC_rVI.png)
 
 ## 🔧 Contributing
 
@@ -208,6 +219,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
