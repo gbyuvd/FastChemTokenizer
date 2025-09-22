@@ -123,9 +123,11 @@ outputs = tokenizer.batch_encode_plus(smiles_list, padding=True, truncation=True
 
 
 ## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP: STILL AT 8K SAMPLES and 1 EPOCH]
-1st Epoch, on 8K samples; embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2; batch_size= 16 * 4 (grad acc)
-Latent Space Visualization based on SMILES Interpolation Validity
-Planned: 50K samples, 2 epoch.
+1st Epoch, on 8K samples; embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2; batch_size= 16 * 4 (grad acc) 
+
+Planned: 50K samples, 2 epoch 
+
+Latent Space Visualization based on SMILES Interpolation Validity   
 
 ![image/png](https://cdn-uploads.huggingface.co/production/uploads/667da868d653c0b02d6a2399/k2a58YUA_gAEF-YBCTs9W.png)
 
@@ -220,6 +222,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
