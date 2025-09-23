@@ -1,6 +1,6 @@
 #
 # Molecule Tokenizer Benchmark & VAE Training Pipeline
-# Fixed All Critical Bugs + Silent Pitfalls
+# 
 #
 
 #
@@ -345,7 +345,7 @@ class MoleculeVAE(nn.Module):
                 logits = self.fc_out(output)
                 outputs.append(logits)
 
-                # 🐞 FIXED BUG #7: Sampling with temperature
+                #   FIXED BUG #7: Sampling with temperature
                 logits = logits.squeeze(1) / temperature  # [B, vocab]
                 probs = F.softmax(logits, dim=-1)
                 input_token = torch.multinomial(probs, 1)  # [B, 1]
@@ -393,7 +393,7 @@ class KLAnnealer:
         self.current_step = 0
 
     def get_beta(self):
-        self.current_step += 1  # ✅ Only increment here
+        self.current_step += 1  #  Only increment here
         if self.current_step > self.total_steps:
             return 1.0
         fraction = self.current_step / self.total_steps
@@ -414,7 +414,7 @@ def collate_fn(batch, tokenizer, max_length=128):
     padded = []
     lengths = []
 
-    pad_token_id = tokenizer.tokenizer.pad_token_id  # 🐞 FIXED: dynamic
+    pad_token_id = tokenizer.tokenizer.pad_token_id  #   FIXED: dynamic
 
     for ids in input_ids:
         if len(ids) > max_length:
@@ -481,7 +481,7 @@ def train_vae(
         for step, (input_ids, lengths) in enumerate(tqdm(train_loader, desc="Training")):
             input_ids, lengths = input_ids.to(device), lengths.to(device)
 
-            # 🎯 Pitfall A: Decay teacher forcing
+            #   Pitfall A: Decay teacher forcing
             tfr = max(0.5, 1.0 - (epoch / num_epochs))  # decay from 1.0 → 0.5
 
             logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=tfr)
@@ -512,7 +512,7 @@ def train_vae(
         with torch.no_grad():
             for input_ids, lengths in tqdm(val_loader, desc="Validating"):
                 input_ids, lengths = input_ids.to(device), lengths.to(device)
-                # 🎯 Pitfall B: Use same beta as training for fair comparison
+                #   Pitfall B: Use same beta as training for fair comparison
                 beta = kl_annealer.get_beta()  # ← NOT hardcoded 1.0
                 logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=0.0)
                 loss, ce_loss, kl_loss = vae_loss(logits, input_ids, mu, logvar, pad_token_id, beta=beta)
@@ -548,19 +548,19 @@ def train_vae(
     return best_val_loss
 
 #
-# 🚀 TRAINING LOOP OVER TOKENIZERS (Fixed Bug #1)
+#   TRAINING LOOP OVER TOKENIZERS (Fixed Bug #1)
 #
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 for tokenizer in TOKENIZERS:
-    print(f"\n🚀 STARTING TRAINING FOR: {tokenizer.name}\n")
+    print(f"\n  STARTING TRAINING FOR: {tokenizer.name}\n")
 
     vocab_size = len(tokenizer)
     pad_token_id = tokenizer.tokenizer.pad_token_id
 
-    # 🎯 Pitfall C: Validate token IDs
+    #   Pitfall C: Validate token IDs
     sample_ids = tokenizer.encode(train_smiles[0], add_special_tokens=True)['input_ids']
     max_id_in_sample = max(sample_ids)
     assert max_id_in_sample < vocab_size, f"Token ID {max_id_in_sample} >= vocab size {vocab_size} in {tokenizer.name}"
@@ -663,10 +663,10 @@ def evaluate_reconstruction(model, dataloader, tokenizer, device, max_length=128
 
             mu, logvar = model.encode(input_ids, lengths)
             z = model.reparameterize(mu, logvar)
-            logits = model.decode(z, max_length=max_length, temperature=0.8)  # 🐞 FIXED #7
+            logits = model.decode(z, max_length=max_length, temperature=0.8)  #   FIXED #7
             preds = logits.argmax(dim=-1)
 
-            # 🐞 FIXED: Align logits and targets to same sequence length
+            #   FIXED: Align logits and targets to same sequence length
             min_len = min(logits.size(1), input_ids.size(1))
             preds = preds[:, :min_len]          # trim predictions
             input_ids = input_ids[:, :min_len]  # trim targets
@@ -680,7 +680,7 @@ def evaluate_reconstruction(model, dataloader, tokenizer, device, max_length=128
                 target_ids = input_ids[i].cpu().tolist()
                 pred_ids = preds[i].cpu().tolist()
 
-                # 🐞 FIXED BUG #6: Trim before decode
+                #   FIXED BUG #6: Trim before decode
                 target_ids_trim = trim_to_special(target_ids, special_ids)
                 pred_ids_trim = trim_to_special(pred_ids, special_ids)
 
@@ -867,11 +867,11 @@ def measure_inference_throughput(model, tokenizer, test_smiles, device,
 #         return None
 
 #
-# 🎯 FINAL EVALUATION PIPELINE
+#   FINAL EVALUATION PIPELINE
 #
 
 def full_evaluation_pipeline(model, tokenizer, train_smiles, test_smiles, device, save_dir):
-    print(f"\n🚀 FULL EVALUATION FOR: {tokenizer.name}")
+    print(f"\n  FULL EVALUATION FOR: {tokenizer.name}")
 
     test_dataset = SmilesDataset(test_smiles)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
@@ -913,11 +913,11 @@ def full_evaluation_pipeline(model, tokenizer, train_smiles, test_smiles, device
     with open(eval_path, "w") as f:
         json.dump(eval_results, f, indent=2, default=str)
 
-    print(f"✅ Evaluation saved to {eval_path}")
+    print(f" Evaluation saved to {eval_path}")
     return eval_results
 
 #
-# 🚀 RUN EVALUATION FOR EACH TOKENIZER
+#   RUN EVALUATION FOR EACH TOKENIZER
 #
 
 for tokenizer in TOKENIZERS:
@@ -943,5 +943,6 @@ for tokenizer in TOKENIZERS:
         device=device,
         save_dir=f"./checkpoints/{tokenizer.name}"
     )
+
 
 print("\n🎉 PIPELINE COMPLETE — ALL TOKENIZERS BENCHMARKED, TRAINED, AND EVALUATED!")
