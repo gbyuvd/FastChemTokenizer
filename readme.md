@@ -125,7 +125,7 @@ outputs = tokenizer.batch_encode_plus(smiles_list, padding=True, truncation=True
 ## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP: STILL AT 8K SAMPLES and 1 EPOCH]
 1st Epoch, on 8K samples; embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2; batch_size= 16 * 4 (grad acc) 
 
-Planned: 50K samples, 2 epoch 
+Planned: 8K samples, 10 epochs
 
 Latent Space Visualization based on SMILES Interpolation Validity   
 
@@ -222,6 +222,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
