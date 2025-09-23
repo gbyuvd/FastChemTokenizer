@@ -133,6 +133,33 @@ Latent Space Visualization based on SMILES Interpolation Validity
 
 ![image/png](https://cdn-uploads.huggingface.co/production/uploads/667da868d653c0b02d6a2399/ZwhWS1sJ6MbMewTTC_rVI.png)
 
+```text
+Loaded 8106 SMILES (assumed pre-canonicalized)
+Validating SMILES with RDKit...
+After RDKit filtering: 8106 valid SMILES
+Train: 6484
+Val:   811
+Test:  811
+
+=== Benchmarking ChemBERTa ===
+vocab_size                         : 767
+avg_tokens_per_mol                 : 42.7383
+compression_ratio                  : 1.3739
+percent_unknown                    : 0.0000
+encode_throughput_smiles_per_sec   : 3844.2028
+decode_throughput_smiles_per_sec   : 15993.9616
+decode_reconstruction_accuracy     : 100.0000
+
+=== Benchmarking FastChemTokenizer ===
+vocab_size                         : 1238
+avg_tokens_per_mol                 : 21.8288
+compression_ratio                  : 2.6900
+percent_unknown                    : 0.0000
+encode_throughput_smiles_per_sec   : 37341.6694
+decode_throughput_smiles_per_sec   : 101864.6384
+decode_reconstruction_accuracy     : 100.0000
+```
+
 ## 🔧 Contributing
 
 This project is an ongoing **experiment** — all contributions are welcome!
@@ -222,6 +249,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
