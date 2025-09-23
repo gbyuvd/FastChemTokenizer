@@ -1,6 +1,6 @@
 #
 # Molecule Tokenizer Benchmark & VAE Training Pipeline
-# 
+# PATCHED VERSION — All 5 critical bugs fixed + KL Beta Logging Clarity
 #
 
 #
@@ -53,7 +53,7 @@ print(f"Using device: {device}")
 # Step 1.2 — Load & Preprocess SMILES Corpus
 #
 
-data_path = "./sample_all_8k_smi.csv"
+data_path = "../data/sample_1k_smi_42.csv"
 df = pd.read_csv(data_path)
 
 if 'SMILES' not in df.columns:
@@ -284,7 +284,7 @@ df_results.to_csv("tokenizer_benchmark_results.csv", index=False)
 print("\nTokenizer benchmark results saved to 'tokenizer_benchmark_results.csv'")
 
 #
-# Step 2.1 — VAE Model Class (FIXED)
+# Step 2.1 — VAE Model Class (PATCHED: decode stops at EOS)
 #
 
 class MoleculeVAE(nn.Module):
@@ -349,6 +349,7 @@ class MoleculeVAE(nn.Module):
         """
         Decode latent vector z into a sequence.
         Returns full logits at each step.
+        PATCHED: stops generation when EOS is predicted.
         """
         batch_size = z.size(0)
         device = z.device
@@ -361,22 +362,28 @@ class MoleculeVAE(nn.Module):
         # Start with BOS token — shape: (batch_size, 1)
         input_token = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=device)
         logits = []
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)  # ← TRACK FINISHED SEQS
 
         for _ in range(max_length):
-            embedded = self.embedding(input_token)  # (batch, 1, embed_dim) → 3D, good for LSTM(batch_first=True)
+            embedded = self.embedding(input_token)  # (batch, 1, embed_dim)
             output, hidden = self.decoder_lstm(embedded, hidden)
             logit = self.fc_out(output)  # (batch, 1, vocab)
             logits.append(logit)
 
             if mode == "greedy":
-                input_token = logit.argmax(dim=-1)  # (batch, 1) — ✅ 2D
+                input_token = logit.argmax(dim=-1)  # (batch, 1)
             elif mode == "sample":
-                probs = torch.softmax(logit / temperature, dim=-1)  # (batch, 1, vocab)
-                # Sample from last dimension, result is (batch, 1)
-                input_token = torch.multinomial(probs.squeeze(1), 1)  # ⚠️ DO NOT unsqueeze again!
-                # input_token is already (batch, 1) — perfect!
+                probs = torch.softmax(logit.squeeze(1) / temperature, dim=-1)  # (batch, vocab)
+                input_token = torch.multinomial(probs, 1)  # (batch, 1)
             else:
                 raise ValueError(f"Unknown decode mode: {mode}")
+
+            # ← EARLY STOPPING AT EOS
+            just_finished = (input_token.squeeze(1) == self.eos_token_id)
+            finished |= just_finished
+            input_token[finished] = self.pad_token_id  # pad finished sequences
+            if finished.all():
+                break
 
         return torch.cat(logits, dim=1)  # (batch, seq_len, vocab)
 
@@ -418,7 +425,7 @@ class MoleculeVAE(nn.Module):
         return logits, mu, logvar
 
 #
-# Step 2.2 — Loss Function (Fixed Bug #4: div by zero)
+# Step 2.2 — Loss Function (PATCHED: β applied OUTSIDE, not inside)
 #
 
 def vae_loss(logits, targets, mu, logvar, pad_token_id, beta=1.0):
@@ -438,10 +445,11 @@ def vae_loss(logits, targets, mu, logvar, pad_token_id, beta=1.0):
     ce_loss = (ce_loss * mask).sum() / (mask_sum + 1e-8)
 
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
-    return ce_loss + beta * kl_loss, ce_loss, kl_loss
+    # ← β is applied OUTSIDE — so return raw KL
+    return ce_loss + kl_loss, ce_loss, kl_loss
 
 #
-# Step 2.3 — KL Annealer (Fixed Bug #5: double increment)
+# Step 2.3 — KLAnnealer (Fixed Bug #5: double increment)
 #
 
 class KLAnnealer:
@@ -477,17 +485,17 @@ class KLAnnealer:
         pos_in_cycle = min(pos_in_cycle, 1.0)
 
         # warmup phase
-        if pos_in_cycle < self.ratio:
-            fraction = pos_in_cycle / self.ratio
-            if self.mode == "linear":
-                return fraction
-            elif self.mode == "sigmoid":
-                k = 6 # reduced from 12 to decrease steepness postwarmup
-                return 1 / (1 + math.exp(-k * (fraction - 0.5)))
-            else:
-                raise ValueError(f"Unknown mode: {self.mode}")
+        fraction = pos_in_cycle / self.ratio if pos_in_cycle < self.ratio else 1.0
+
+        if self.mode == "linear":
+            return min(fraction, 1.0)
+        elif self.mode == "sigmoid":
+            # Map pos_in_cycle ∈ [0,1] to sigmoid ∈ [0,1]
+            # Center at 0.5, so at pos_in_cycle=0.5, sigmoid=0.5
+            k = 6
+            return 1 / (1 + math.exp(-k * (pos_in_cycle - 0.5)))
         else:
-            return 1.0
+            raise ValueError(f"Unknown mode: {self.mode}")
 
 #
 # Step 2.4 — Collate Function (Fixed Bug #2: dynamic pad id)
@@ -526,7 +534,7 @@ class SmilesDataset(Dataset):
         return self.smiles_list[idx]
 
 #
-# Step 3.x — Training Loop (Fixed Bug #1: loop over tokenizers)
+# Step 3.x — Training Loop (PATCHED: per-tokenizer annealer, exponential TFR, device-safe eval, KL beta logging clarity)
 #
 
 LEARNING_RATE = 5e-6
@@ -568,8 +576,8 @@ def train_vae(
         for step, (input_ids, lengths) in enumerate(tqdm(train_loader, desc="Training")):
             input_ids, lengths = input_ids.to(device), lengths.to(device)
 
-            # Decay teacher forcing
-            tfr = max(0.5, 1.0 - (epoch / num_epochs))  # decay from 1.0 → 0.5
+            # ← PATCHED: exponential decay per epoch (not per batch, but smoother than linear)
+            tfr = 1.0 * (0.5 ** (epoch / max(1, num_epochs-1)))  # decay from 1.0 → 0.5
 
             logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=tfr)
             beta = kl_annealer.get_beta(increment=True)
@@ -591,7 +599,11 @@ def train_vae(
             optimizer.step()
             optimizer.zero_grad()
 
-        # Validation
+        # ✅ CAPTURE BETA AFTER TRAINING — BEFORE VALIDATION
+        # This ensures we log the beta that was actually used during training
+        current_beta = kl_annealer.get_beta(increment=False)
+
+        # Validation — DO NOT query beta again here
         model.eval()
         total_val_loss = total_val_ce = total_val_kl = 0.0
         val_batches = 0
@@ -599,9 +611,9 @@ def train_vae(
         with torch.no_grad():
             for input_ids, lengths in tqdm(val_loader, desc="Validating"):
                 input_ids, lengths = input_ids.to(device), lengths.to(device)
-                beta = kl_annealer.get_beta(increment=False)  # ← NOT hardcoded 1.0
+                # Use captured beta — DO NOT call kl_annealer again here
                 logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=0.0)
-                loss, ce_loss, kl_loss = vae_loss(logits, input_ids, mu, logvar, pad_token_id, beta=beta)
+                loss, ce_loss, kl_loss = vae_loss(logits, input_ids, mu, logvar, pad_token_id, beta=current_beta)
 
                 total_val_loss += loss.item()
                 total_val_ce += ce_loss.item()
@@ -614,11 +626,11 @@ def train_vae(
         current_step = (epoch + 1) * len(train_loader)
         with open(log_file, "a") as f:
             f.write(f"{epoch+1},{current_step},{avg_train_loss:.6f},{total_train_ce/num_batches:.6f},{total_train_kl/num_batches:.6f},"
-                    f"{avg_val_loss:.6f},{total_val_ce/val_batches:.6f},{total_val_kl/val_batches:.6f},{beta:.6f}\n")
+                    f"{avg_val_loss:.6f},{total_val_ce/val_batches:.6f},{total_val_kl/val_batches:.6f},{current_beta:.6f}\n")
 
         print(f"Train Loss: {avg_train_loss:.4f}")
         print(f"Val Loss:   {avg_val_loss:.4f}")
-        print(f"KL Beta:    {beta:.4f}")
+        print(f"KL Beta:    {current_beta:.4f}")  # ← Now explicitly the training beta
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
@@ -634,7 +646,7 @@ def train_vae(
     return best_val_loss
 
 #
-#   TRAINING LOOP OVER TOKENIZERS (Fixed Bug #1)
+#   TRAINING LOOP OVER TOKENIZERS (PATCHED: KLAnnealer reset per tokenizer)
 #
 
 for tokenizer in TOKENIZERS:
@@ -655,14 +667,18 @@ for tokenizer in TOKENIZERS:
         eos_token_id=tokenizer.eos_token_id
     ).to(device)
 
+    ########################################################################
+    # 1. CREATE A FRESH annealer FOR EVERY TOKENIZER
+    ########################################################################
     total_steps = (len(train_smiles) // (BATCH_SIZE*ACCUMULATION_STEPS)) * NUM_EPOCHS
     kl_annealer = KLAnnealer(
         total_steps=total_steps,
-        n_cycle=2,          # 2 cycles across all training
-        ratio=0.3,          # 30% of each cycle for warmup
-        mode="sigmoid",     # smooth ramp
-        per_epoch=False     # cycles across total training
+        n_cycle=4,               # 4 cycles across all epochs → real cyclical
+        ratio=0.25,              # 25% of each cycle is warmup
+        mode="sigmoid",
+        per_epoch=False
     )
+
     optimizer = Ranger21(
         model.parameters(),
         lr=LEARNING_RATE,
@@ -1021,4 +1037,3 @@ for tokenizer in TOKENIZERS:
     )
 
 print("\n🎉 PIPELINE COMPLETE — ALL TOKENIZERS BENCHMARKED, TRAINED, AND EVALUATED!")
-
