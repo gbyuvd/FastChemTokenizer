@@ -53,7 +53,7 @@ print(f"Using device: {device}")
 # Step 1.2 — Load & Preprocess SMILES Corpus
 #
 
-data_path = "../data/sample_1k_smi_42.csv"
+data_path = "./sample_all_8k_smi.csv"
 df = pd.read_csv(data_path)
 
 if 'SMILES' not in df.columns:
@@ -1021,3 +1021,4 @@ for tokenizer in TOKENIZERS:
     )
 
 print("\n🎉 PIPELINE COMPLETE — ALL TOKENIZERS BENCHMARKED, TRAINED, AND EVALUATED!")
+
