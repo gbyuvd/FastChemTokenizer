@@ -29,6 +29,7 @@ from ranger21 import Ranger21
 from torch.utils.data import DataLoader, Dataset
 from scipy.stats import entropy
 import json
+import math
 
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')  
@@ -52,7 +53,7 @@ print(f"Using device: {device}")
 # Step 1.2 — Load & Preprocess SMILES Corpus
 #
 
-data_path = "./sample_all_8k_smi.csv"
+data_path = "../data/sample_1k_smi_42.csv"
 df = pd.read_csv(data_path)
 
 if 'SMILES' not in df.columns:
@@ -159,6 +160,22 @@ class TokenizerWrapper:
             return self.tokenizer.vocab
         else:
             return self.tokenizer.get_vocab()
+    
+    @property
+    def bos_token_id(self):
+        return self.tokenizer.bos_token_id
+
+    @property
+    def eos_token_id(self):
+        return self.tokenizer.eos_token_id
+
+    @property
+    def pad_token_id(self):
+        return self.tokenizer.pad_token_id
+
+    @property
+    def unk_token_id(self):
+        return self.tokenizer.unk_token_id
 
 #
 # Step 1.5 — Initialize Tokenizers
@@ -205,14 +222,14 @@ def benchmark_tokenizer(tokenizer, smiles_sample, encode_only=False):
 
         unk_counts += input_ids.count(unk_id)
 
-    L̅ = np.mean(token_counts)
-    C = np.mean(char_counts) / L̅
+    L̄ = np.mean(token_counts)
+    C = np.mean(char_counts) / L̄
     U = unk_counts / total_tokens if total_tokens > 0 else 0.0
     Tenc = len(sample) / sum(encode_times)
 
     metrics = {
         'vocab_size': V,
-        'avg_tokens_per_mol': L̅,
+        'avg_tokens_per_mol': L̄,
         'compression_ratio': C,
         'percent_unknown': U * 100,
         'encode_throughput_smiles_per_sec': Tenc,
@@ -267,11 +284,12 @@ df_results.to_csv("tokenizer_benchmark_results.csv", index=False)
 print("\nTokenizer benchmark results saved to 'tokenizer_benchmark_results.csv'")
 
 #
-# Step 2.1 — VAE Model Class
+# Step 2.1 — VAE Model Class (FIXED)
 #
 
 class MoleculeVAE(nn.Module):
-    def __init__(self, vocab_size, embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2, pad_token_id=0):
+    def __init__(self, vocab_size, embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2,
+                 pad_token_id=0, bos_token_id=1, eos_token_id=2):
         super().__init__()
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
@@ -279,6 +297,8 @@ class MoleculeVAE(nn.Module):
         self.latent_dim = latent_dim
         self.num_layers = num_layers
         self.pad_token_id = pad_token_id
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
 
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=pad_token_id)
         self.encoder_lstm = nn.LSTM(embed_dim, hidden_dim, num_layers, batch_first=True, bidirectional=True)
@@ -325,37 +345,76 @@ class MoleculeVAE(nn.Module):
         else:
             return mu
 
-    def decode(self, z, target_seq=None, max_length=128, teacher_forcing_ratio=0.5, temperature=1.0):
-        B = z.size(0)
-        h0 = self.latent2hidden(z).view(self.num_layers, B, self.hidden_dim)
-        c0 = self.latent2cell(z).view(self.num_layers, B, self.hidden_dim)
+    def decode(self, z, max_length=128, mode="greedy", temperature=1.0):
+        """
+        Decode latent vector z into a sequence.
+        Returns full logits at each step.
+        """
+        batch_size = z.size(0)
+        device = z.device
+
+        # Initialize hidden states from latent
+        h0 = self.latent2hidden(z).view(self.num_layers, batch_size, self.hidden_dim)
+        c0 = self.latent2cell(z).view(self.num_layers, batch_size, self.hidden_dim)
         hidden = (h0, c0)
 
-        if target_seq is not None and random.random() < teacher_forcing_ratio:
-            embedded = self.embedding(target_seq)
-            output, _ = self.decoder_lstm(embedded, hidden)
-            logits = self.fc_out(output)
-            return logits
-        else:
-            input_token = torch.full((B, 1), 1, dtype=torch.long, device=z.device)
-            outputs = []
-            for t in range(max_length):
+        # Start with BOS token — shape: (batch_size, 1)
+        input_token = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=device)
+        logits = []
+
+        for _ in range(max_length):
+            embedded = self.embedding(input_token)  # (batch, 1, embed_dim) → 3D, good for LSTM(batch_first=True)
+            output, hidden = self.decoder_lstm(embedded, hidden)
+            logit = self.fc_out(output)  # (batch, 1, vocab)
+            logits.append(logit)
+
+            if mode == "greedy":
+                input_token = logit.argmax(dim=-1)  # (batch, 1) — ✅ 2D
+            elif mode == "sample":
+                probs = torch.softmax(logit / temperature, dim=-1)  # (batch, 1, vocab)
+                # Sample from last dimension, result is (batch, 1)
+                input_token = torch.multinomial(probs.squeeze(1), 1)  # ⚠️ DO NOT unsqueeze again!
+                # input_token is already (batch, 1) — perfect!
+            else:
+                raise ValueError(f"Unknown decode mode: {mode}")
+
+        return torch.cat(logits, dim=1)  # (batch, seq_len, vocab)
+
+    def forward(self, input_ids, lengths, target_seq=None, teacher_forcing_ratio=0.0, temperature=1.0):
+        mu, logvar = self.encode(input_ids, lengths)
+        z = self.reparameterize(mu, logvar)
+
+        if self.training and target_seq is not None and teacher_forcing_ratio > 0:
+            # Training with teacher forcing
+            batch_size, seq_len = target_seq.size()
+            device = target_seq.device
+            
+            # Initialize hidden states
+            h0 = self.latent2hidden(z).view(self.num_layers, batch_size, self.hidden_dim)
+            c0 = self.latent2cell(z).view(self.num_layers, batch_size, self.hidden_dim)
+            hidden = (h0, c0)
+            
+            logits = []
+            input_token = target_seq[:, 0].unsqueeze(1)  # BOS
+
+            for t in range(1, seq_len):
                 embedded = self.embedding(input_token)
                 output, hidden = self.decoder_lstm(embedded, hidden)
-                logits = self.fc_out(output)
-                outputs.append(logits)
+                logit = self.fc_out(output)
+                logits.append(logit)
 
-                #   FIXED BUG #7: Sampling with temperature
-                logits = logits.squeeze(1) / temperature  # [B, vocab]
-                probs = F.softmax(logits, dim=-1)
-                input_token = torch.multinomial(probs, 1)  # [B, 1]
+                use_teacher = torch.rand(1).item() < teacher_forcing_ratio
+                if use_teacher:
+                    input_token = target_seq[:, t].unsqueeze(1)
+                else:
+                    input_token = logit.argmax(dim=-1)
 
-            return torch.cat(outputs, dim=1)
+            logits = torch.cat(logits, dim=1)
+        else:
+            # Inference mode
+            max_len = target_seq.size(1) if target_seq is not None else 128
+            logits = self.decode(z, max_length=max_len, mode="greedy", temperature=temperature)
 
-    def forward(self, x, lengths, target_seq=None, teacher_forcing_ratio=0.5, temperature=1.0):
-        mu, logvar = self.encode(x, lengths)
-        z = self.reparameterize(mu, logvar)
-        logits = self.decode(z, target_seq, teacher_forcing_ratio=teacher_forcing_ratio, temperature=temperature)
         return logits, mu, logvar
 
 #
@@ -386,19 +445,47 @@ def vae_loss(logits, targets, mu, logvar, pad_token_id, beta=1.0):
 #
 
 class KLAnnealer:
-    def __init__(self, total_steps, n_cycle=1, ratio=0.3):
+    def __init__(self, total_steps, n_cycle=1, ratio=0.3, mode="linear", per_epoch=False, steps_per_epoch=None):
         self.total_steps = total_steps
         self.n_cycle = n_cycle
         self.ratio = ratio
+        self.mode = mode
+        self.per_epoch = per_epoch
+        self.steps_per_epoch = steps_per_epoch
         self.current_step = 0
 
-    def get_beta(self):
-        self.current_step += 1  #  Only increment here
+    def get_beta(self, increment=True):
+        """Get current KL weight.
+        Args:
+            increment (bool): whether to advance the annealer (use False in validation).
+        """
+        if increment:
+            self.current_step += 1
+
         if self.current_step > self.total_steps:
             return 1.0
-        fraction = self.current_step / self.total_steps
-        if fraction < self.ratio:
-            return fraction / self.ratio
+
+        # effective cycle length
+        if self.per_epoch:
+            assert self.steps_per_epoch is not None, "steps_per_epoch required if per_epoch=True"
+            cycle_length = self.steps_per_epoch / self.n_cycle
+            pos_in_cycle = (self.current_step % self.steps_per_epoch) / cycle_length
+        else:
+            cycle_length = self.total_steps / self.n_cycle
+            pos_in_cycle = (self.current_step % cycle_length) / cycle_length
+
+        pos_in_cycle = min(pos_in_cycle, 1.0)
+
+        # warmup phase
+        if pos_in_cycle < self.ratio:
+            fraction = pos_in_cycle / self.ratio
+            if self.mode == "linear":
+                return fraction
+            elif self.mode == "sigmoid":
+                k = 6 # reduced from 12 to decrease steepness postwarmup
+                return 1 / (1 + math.exp(-k * (fraction - 0.5)))
+            else:
+                raise ValueError(f"Unknown mode: {self.mode}")
         else:
             return 1.0
 
@@ -445,7 +532,7 @@ class SmilesDataset(Dataset):
 LEARNING_RATE = 5e-6
 BATCH_SIZE = 16
 ACCUMULATION_STEPS = 4
-NUM_EPOCHS = 10
+NUM_EPOCHS = 5
 MAX_SEQ_LEN = 128
 KL_ANNEAL_RATIO = 0.3
 
@@ -481,11 +568,11 @@ def train_vae(
         for step, (input_ids, lengths) in enumerate(tqdm(train_loader, desc="Training")):
             input_ids, lengths = input_ids.to(device), lengths.to(device)
 
-            #   Pitfall A: Decay teacher forcing
+            # Decay teacher forcing
             tfr = max(0.5, 1.0 - (epoch / num_epochs))  # decay from 1.0 → 0.5
 
             logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=tfr)
-            beta = kl_annealer.get_beta()
+            beta = kl_annealer.get_beta(increment=True)
             loss, ce_loss, kl_loss = vae_loss(logits, input_ids, mu, logvar, pad_token_id, beta=beta)
 
             loss = loss / accumulation_steps
@@ -512,8 +599,7 @@ def train_vae(
         with torch.no_grad():
             for input_ids, lengths in tqdm(val_loader, desc="Validating"):
                 input_ids, lengths = input_ids.to(device), lengths.to(device)
-                #   Pitfall B: Use same beta as training for fair comparison
-                beta = kl_annealer.get_beta()  # ← NOT hardcoded 1.0
+                beta = kl_annealer.get_beta(increment=False)  # ← NOT hardcoded 1.0
                 logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=0.0)
                 loss, ce_loss, kl_loss = vae_loss(logits, input_ids, mu, logvar, pad_token_id, beta=beta)
 
@@ -550,9 +636,6 @@ def train_vae(
 #
 #   TRAINING LOOP OVER TOKENIZERS (Fixed Bug #1)
 #
-import torch
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
 for tokenizer in TOKENIZERS:
     print(f"\n  STARTING TRAINING FOR: {tokenizer.name}\n")
@@ -560,15 +643,26 @@ for tokenizer in TOKENIZERS:
     vocab_size = len(tokenizer)
     pad_token_id = tokenizer.tokenizer.pad_token_id
 
-    #   Pitfall C: Validate token IDs
+    # Validate token IDs
     sample_ids = tokenizer.encode(train_smiles[0], add_special_tokens=True)['input_ids']
     max_id_in_sample = max(sample_ids)
     assert max_id_in_sample < vocab_size, f"Token ID {max_id_in_sample} >= vocab size {vocab_size} in {tokenizer.name}"
 
-    model = MoleculeVAE(vocab_size, pad_token_id=pad_token_id).to(device)
-    total_steps = (len(train_smiles) // (BATCH_SIZE * ACCUMULATION_STEPS)) * NUM_EPOCHS
-    kl_annealer = KLAnnealer(total_steps, ratio=KL_ANNEAL_RATIO)
+    model = MoleculeVAE(
+        vocab_size=len(tokenizer),
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id
+    ).to(device)
 
+    total_steps = (len(train_smiles) // (BATCH_SIZE*ACCUMULATION_STEPS)) * NUM_EPOCHS
+    kl_annealer = KLAnnealer(
+        total_steps=total_steps,
+        n_cycle=2,          # 2 cycles across all training
+        ratio=0.3,          # 30% of each cycle for warmup
+        mode="sigmoid",     # smooth ramp
+        per_epoch=False     # cycles across total training
+    )
     optimizer = Ranger21(
         model.parameters(),
         lr=LEARNING_RATE,
@@ -581,21 +675,6 @@ for tokenizer in TOKENIZERS:
         warmdown_active=False,
     )
 
-    # Define optimizer
-#    optimizer = AdamW(
-#        model.parameters(),
-#        lr=LEARNING_RATE,
-#        weight_decay=0.01,  # same as before
-#    )
-#
-#    # Define scheduler: cosine annealing over total steps
-#    total_steps = NUM_EPOCHS * (len(train_smiles) // (BATCH_SIZE * ACCUMULATION_STEPS))
-#    scheduler = CosineAnnealingLR(
-#        optimizer,
-#        T_max=total_steps,
-#        eta_min=1e-6,  # minimum learning rate (optional, prevents going to 0)
-#    )
-    
     train_dataset = SmilesDataset(train_smiles)
     val_dataset = SmilesDataset(val_smiles)
 
@@ -630,7 +709,7 @@ for tokenizer in TOKENIZERS:
         save_dir=f"./checkpoints/{tokenizer.name}",
         tokenizer_name=tokenizer.name
     )
-
+    
 #
 # Step 4.x — Evaluation Pipeline (Fixed Bug #6, #7, #8)
 #
@@ -663,24 +742,24 @@ def evaluate_reconstruction(model, dataloader, tokenizer, device, max_length=128
 
             mu, logvar = model.encode(input_ids, lengths)
             z = model.reparameterize(mu, logvar)
-            logits = model.decode(z, max_length=max_length, temperature=0.8)  #   FIXED #7
+            logits = model.decode(z, max_length=128, mode="greedy")  # FIXED #7 for reconstruction
             preds = logits.argmax(dim=-1)
 
-            #   FIXED: Align logits and targets to same sequence length
+            # FIXED: Align logits and targets to same sequence length
             min_len = min(logits.size(1), input_ids.size(1))
             preds = preds[:, :min_len]          # trim predictions
-            input_ids = input_ids[:, :min_len]  # trim targets
+            input_ids_eval = input_ids[:, :min_len]  # trim targets
 
-            mask = (input_ids != pad_id)
-            token_correct = ((preds == input_ids) & mask).sum().item()
+            mask = (input_ids_eval != pad_id)
+            token_correct = ((preds == input_ids_eval) & mask).sum().item()
             total_token_correct += token_correct
             total_tokens += mask.sum().item()
 
             for i in range(B):
-                target_ids = input_ids[i].cpu().tolist()
+                target_ids = input_ids_eval[i].cpu().tolist()
                 pred_ids = preds[i].cpu().tolist()
 
-                #   FIXED BUG #6: Trim before decode
+                # FIXED BUG #6: Trim before decode
                 target_ids_trim = trim_to_special(target_ids, special_ids)
                 pred_ids_trim = trim_to_special(pred_ids, special_ids)
 
@@ -772,8 +851,15 @@ def evaluate_interpolation_validity(model, tokenizer, test_smiles, device, num_p
             alphas = torch.linspace(0, 1, steps, device=device)
             for alpha in alphas:
                 z_interp = alpha * mu_b + (1 - alpha) * mu_a
-                logits = model.decode(z_interp, max_length=max_length, temperature=0.8)
-                preds = logits.argmax(dim=-1).squeeze(0)
+                # Ensure z_interp maintains batch dimension [1, latent_dim]
+                if z_interp.dim() == 1:
+                    z_interp = z_interp.unsqueeze(0)
+                
+                logits = model.decode(z_interp, max_length=max_length, mode="sample", temperature=0.8)
+                preds = logits.argmax(dim=-1)
+                # Handle batch dimension properly
+                if preds.dim() > 1:
+                    preds = preds[0]  # Take first (and only) batch item
                 pred_smiles = tokenizer.decode(preds.cpu().tolist(), skip_special_tokens=True)
                 if Chem.MolFromSmiles(pred_smiles) is not None:
                     valid_interps += 1
@@ -791,9 +877,8 @@ def sample_from_latent(model, tokenizer, num_samples=30000, latent_dim=128, max_
             current_batch_size = min(BATCH_SIZE, num_samples - len(generated_smiles))
             if current_batch_size <= 0: break
             z = torch.randn(current_batch_size, latent_dim, device=device)
-            logits = model.decode(z, max_length=max_length, temperature=temperature)
-            probs = F.softmax(logits / temperature, dim=-1)
-            preds = torch.multinomial(probs.view(-1, probs.size(-1)), 1).view(probs.size(0), -1)
+            logits = model.decode(z, max_length=max_length, mode="sample", temperature=temperature)
+            preds = logits.argmax(dim=-1)
             for i in range(current_batch_size):
                 pred_ids = preds[i].cpu().tolist()
                 smiles = tokenizer.decode(pred_ids, skip_special_tokens=True)
@@ -854,20 +939,7 @@ def measure_inference_throughput(model, tokenizer, test_smiles, device,
     return results
 
 #
-# FCD — Uncomment if fcd is installed
-#
-# from fcd import get_fcd
-# def compute_fcd(true_smiles, gen_smiles, n_jobs=1):
-#     try:
-#         fcd_score = get_fcd(true_smiles, gen_smiles, n_jobs=n_jobs)
-#         print(f"FCD: {fcd_score:.4f}")
-#         return fcd_score
-#     except Exception as e:
-#         print(f"FCD failed: {e}")
-#         return None
-
-#
-#   FINAL EVALUATION PIPELINE
+# FINAL EVALUATION PIPELINE
 #
 
 def full_evaluation_pipeline(model, tokenizer, train_smiles, test_smiles, device, save_dir):
@@ -908,12 +980,11 @@ def full_evaluation_pipeline(model, tokenizer, train_smiles, test_smiles, device
         # 'inference_throughput': throughput,
     }
 
-    import json
     eval_path = os.path.join(save_dir, "evaluation_results.json")
     with open(eval_path, "w") as f:
         json.dump(eval_results, f, indent=2, default=str)
 
-    print(f" Evaluation saved to {eval_path}")
+    print(f"  Evaluation saved to {eval_path}")
     return eval_results
 
 #
@@ -921,7 +992,7 @@ def full_evaluation_pipeline(model, tokenizer, train_smiles, test_smiles, device
 #
 
 for tokenizer in TOKENIZERS:
-    print(f"\n🔍 LOADING BEST MODEL FOR: {tokenizer.name}")
+    print(f"\n🔄 LOADING BEST MODEL FOR: {tokenizer.name}")
     checkpoint_path = f"./checkpoints/{tokenizer.name}/best_model_{tokenizer.name}.pt"
     if not os.path.exists(checkpoint_path):
         print(f"⚠️  Checkpoint not found: {checkpoint_path}")
@@ -929,7 +1000,12 @@ for tokenizer in TOKENIZERS:
 
     vocab_size = len(tokenizer)
     pad_token_id = tokenizer.tokenizer.pad_token_id
-    model = MoleculeVAE(vocab_size, pad_token_id=pad_token_id).to(device)
+    model = MoleculeVAE(
+        vocab_size=vocab_size, 
+        pad_token_id=pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id
+    ).to(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -944,6 +1020,4 @@ for tokenizer in TOKENIZERS:
         save_dir=f"./checkpoints/{tokenizer.name}"
     )
 
-
 print("\n🎉 PIPELINE COMPLETE — ALL TOKENIZERS BENCHMARKED, TRAINED, AND EVALUATED!")
-
