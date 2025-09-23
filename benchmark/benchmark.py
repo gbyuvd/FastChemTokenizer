@@ -566,7 +566,7 @@ for tokenizer in TOKENIZERS:
     assert max_id_in_sample < vocab_size, f"Token ID {max_id_in_sample} >= vocab size {vocab_size} in {tokenizer.name}"
 
     model = MoleculeVAE(vocab_size, pad_token_id=pad_token_id).to(device)
-    total_steps = (len(train_smiles) // BATCH_SIZE) * NUM_EPOCHS
+    total_steps = (len(train_smiles) // (BATCH_SIZE * ACCUMULATION_STEPS)) * NUM_EPOCHS
     kl_annealer = KLAnnealer(total_steps, ratio=KL_ANNEAL_RATIO)
 
     optimizer = Ranger21(
@@ -946,3 +946,4 @@ for tokenizer in TOKENIZERS:
 
 
 print("\n🎉 PIPELINE COMPLETE — ALL TOKENIZERS BENCHMARKED, TRAINED, AND EVALUATED!")
+
