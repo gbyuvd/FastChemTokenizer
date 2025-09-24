@@ -86,9 +86,9 @@ tokenizer.decode_with_trace(encoded)
 
 **for SELFIES**
 ```python
-from FastChemTokenizer import FastChemTokenizerSelfies
+from FastChemTokenizerHF import FastChemTokenizerSelfies
 
-tokenizer = FastChemTokenizerSelfies.from_pretrained("./selftok_wtails") # change to *_core for w/o tails
+tokenizer = FastChemTokenizerSelfies.from_pretrained("../selftok_core") # change to *_core for w/o tails
 benzene = "[C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]" # please make sure whitespaced input
 encoded = tokenizer.encode(benzene)
 print("✅ Encoded:", encoded)
@@ -96,11 +96,16 @@ decoded = tokenizer.decode(encoded)
 print("✅ Decoded:", decoded)
 tokenizer.decode_with_trace(encoded)
 
-# ✅ Encoded: [70]
-# ✅ Decoded: [C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]
+# ✅ Encoded: [0, 257, 640, 693, 402, 1]
+# ✅ Decoded: <s> [C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1] </s>
 
-# 🔍 Decoding 1 tokens:
-#  [000] ID=   70 → '[C] [=C] [C] [=C] [C] [=C] [Ring1] [=Branch1]'
+# 🔍 Decoding 6 tokens:
+#  [000] ID=    0 → '<s>'
+#  [001] ID=  257 → '[C] [=C] [C] [=C] [C]'
+#  [002] ID=  640 → '[=C]'
+#  [003] ID=  693 → '[Ring1]'
+#  [004] ID=  402 → '[=Branch1]'
+#  [005] ID=    1 → '</s>'
 ```
 
 ## 📦 Installation & Usage
@@ -249,6 +254,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
