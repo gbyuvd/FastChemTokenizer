@@ -64,10 +64,14 @@ Core's vocab length = 781 (after pruning)
 - **HF Compatible**: Implements `__call__`, `encode_plus`, `batch_encode_plus`, `save_pretrained`, `from_pretrained`
 - **Memory Efficient**: Trie traversal and cache
 
-**for SMILES (Core backbone vocabs without tails)** 
-for with tails, use `./smitok`
+**for SMILES (core backbone vocabs without tails)** 
+
+for with tails, use `./smitok` 
+
+if you want to use HF compat tokenizer (still in devel), please use `FastChemTokenizerHF` 
+
 ```python
-from FastChemTokenizerHF import FastChemTokenizer
+from FastChemTokenizer import FastChemTokenizer
 
 tokenizer = FastChemTokenizer.from_pretrained("../smitok_core")
 benzene = "c1ccccc1"
@@ -77,14 +81,14 @@ decoded = tokenizer.decode(encoded)
 print("✅ Decoded:", decoded)
 tokenizer.decode_with_trace(encoded)
 
-# ✅ Encoded: [0, 489, 640, 2]
-# ✅ Decoded: <s>c1ccccc1</s>
+# ✅ Encoded: [271, 474, 840]
+# ✅ Decoded: c1ccccc1
+# 
+# 🔍 Decoding 3 tokens:
+#   [000] ID=  271 → 'c1ccc'
+#   [001] ID=  474 → 'cc'
+#   [002] ID=  840 → '1'
 
-# 🔍 Decoding 4 tokens:
-#   [000] ID=    0 → '<s>'
-#   [001] ID=  489 → 'c1ccc'
-#   [002] ID=  640 → 'cc1'
-#   [003] ID=    2 → '</s>'
 
 ```
 
@@ -258,6 +262,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
