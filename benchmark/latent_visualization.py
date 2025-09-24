@@ -135,6 +135,37 @@ class TokenizerWrapper:
     def unk_token_id(self):
         return self.tokenizer.unk_token_id
 
+def collate_fn(batch, tokenizer, max_length=128):
+    encodings = [tokenizer.encode(s, add_special_tokens=True) for s in batch]
+    input_ids = [e['input_ids'] for e in encodings]
+
+    max_len = min(max(len(ids) for ids in input_ids), max_length)
+    padded = []
+    lengths = []
+
+    pad_token_id = tokenizer.tokenizer.pad_token_id  #   FIXED: dynamic
+
+    for ids in input_ids:
+        if len(ids) > max_length:
+            ids = ids[:max_length]
+        else:
+            ids = ids + [pad_token_id] * (max_len - len(ids))
+        padded.append(ids)
+        lengths.append(min(len(ids), max_length))
+
+    return torch.tensor(padded, dtype=torch.long), torch.tensor(lengths, dtype=torch.long)
+
+
+class SmilesDataset(Dataset):
+    def __init__(self, smiles_list):
+        self.smiles_list = smiles_list
+    def __len__(self):
+        return len(self.smiles_list)
+    def __getitem__(self, idx):
+        return self.smiles_list[idx]
+
+
+
 class MoleculeVAE(nn.Module):
     def __init__(self, vocab_size, embed_dim=256, hidden_dim=512, latent_dim=128, num_layers=2,
                  pad_token_id=0, bos_token_id=1, eos_token_id=2):
@@ -197,6 +228,7 @@ class MoleculeVAE(nn.Module):
         """
         Decode latent vector z into a sequence.
         Returns full logits at each step.
+        PATCHED: stops generation when EOS is predicted.
         """
         batch_size = z.size(0)
         device = z.device
@@ -209,22 +241,28 @@ class MoleculeVAE(nn.Module):
         # Start with BOS token — shape: (batch_size, 1)
         input_token = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=device)
         logits = []
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)  # ← TRACK FINISHED SEQS
 
         for _ in range(max_length):
-            embedded = self.embedding(input_token)  # (batch, 1, embed_dim) → 3D, good for LSTM(batch_first=True)
+            embedded = self.embedding(input_token)  # (batch, 1, embed_dim)
             output, hidden = self.decoder_lstm(embedded, hidden)
             logit = self.fc_out(output)  # (batch, 1, vocab)
             logits.append(logit)
 
             if mode == "greedy":
-                input_token = logit.argmax(dim=-1)  # (batch, 1) — ✅ 2D
+                input_token = logit.argmax(dim=-1)  # (batch, 1)
             elif mode == "sample":
-                probs = torch.softmax(logit / temperature, dim=-1)  # (batch, 1, vocab)
-                # Sample from last dimension, result is (batch, 1)
-                input_token = torch.multinomial(probs.squeeze(1), 1)  # ⚠️ DO NOT unsqueeze again!
-                # input_token is already (batch, 1) — perfect!
+                probs = torch.softmax(logit.squeeze(1) / temperature, dim=-1)  # (batch, vocab)
+                input_token = torch.multinomial(probs, 1)  # (batch, 1)
             else:
                 raise ValueError(f"Unknown decode mode: {mode}")
+
+            # ← EARLY STOPPING AT EOS
+            just_finished = (input_token.squeeze(1) == self.eos_token_id)
+            finished |= just_finished
+            input_token[finished] = self.pad_token_id  # pad finished sequences
+            if finished.all():
+                break
 
         return torch.cat(logits, dim=1)  # (batch, seq_len, vocab)
 
