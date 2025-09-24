@@ -52,7 +52,7 @@ print(f"Using device: {device}")
 # Step 1.2 — Load & Preprocess SMILES Corpus
 #
 
-data_path = "../data/sample_all_8k_smi.csv"
+data_path = "../data/sample_1k_smi_42.csv"
 df = pd.read_csv(data_path)
 
 if 'SMILES' not in df.columns:
@@ -277,8 +277,8 @@ class MoleculeVAE(nn.Module):
                  pad_token_id: int = 0, 
                  bos_token_id: int = 1, 
                  eos_token_id: int = 2,
-                 dropout: float = 0.3,
-                 use_attention: bool = False,
+                 dropout: float = 0.2,
+                 use_attention: bool = True,
                  quantize_ready: bool = False):
         super().__init__()
         self.vocab_size = vocab_size
@@ -465,6 +465,9 @@ class MoleculeVAE(nn.Module):
 # Step 2.2 — Loss Function (PATCHED: β applied OUTSIDE, not inside)
 #
 
+# PATCH 2: Fix VAE Loss Function - Ensure beta is properly applied
+# Replace the existing vae_loss function:
+
 def vae_loss(logits, targets, mu, logvar, pad_token_id, beta=1.0):
     # 1. align lengths
     max_len = max(logits.size(1), targets.size(1))
@@ -481,13 +484,21 @@ def vae_loss(logits, targets, mu, logvar, pad_token_id, beta=1.0):
     mask_sum = mask.sum()
     ce_loss = (ce_loss * mask).sum() / (mask_sum + 1e-8)
 
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
-    # ← β is applied OUTSIDE — so return raw KL
-    return ce_loss + kl_loss, ce_loss, kl_loss
+    # FIXED: Raw KL loss computation
+    kl_loss_raw = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+    # Apply mask to KL loss if needed (but typically KL is per-sample)
+    kl_loss = kl_loss_raw.mean()
+    
+    # CRITICAL FIX: Apply beta scaling correctly
+    total_loss = ce_loss + beta * kl_loss
+    
+    return total_loss, ce_loss, kl_loss
 
 #
 # Step 2.3 — KLAnnealer (Fixed Bug #5: double increment)
 #
+
+import math
 
 class KLAnnealer:
     def __init__(self, total_steps, n_cycle=1, ratio=0.3, mode="linear", per_epoch=False, steps_per_epoch=None):
@@ -498,41 +509,68 @@ class KLAnnealer:
         self.per_epoch = per_epoch
         self.steps_per_epoch = steps_per_epoch
         self.current_step = 0
+        self.current_epoch = 0
 
     def get_beta(self, increment=True):
-        """Get current KL weight.
+        """Get current KL weight (beta).
         Args:
             increment (bool): whether to advance the annealer (use False in validation).
         """
         if increment:
             self.current_step += 1
 
-        if self.current_step > self.total_steps:
-            return 1.0
-
-        # effective cycle length
-        if self.per_epoch:
-            assert self.steps_per_epoch is not None, "steps_per_epoch required if per_epoch=True"
-            cycle_length = self.steps_per_epoch / self.n_cycle
-            pos_in_cycle = (self.current_step % self.steps_per_epoch) / cycle_length
-        else:
+        # Calculate progress based on total steps
+        progress = min(self.current_step / max(self.total_steps, 1.0), 1.0)
+        
+        # For cyclical annealing
+        if self.n_cycle > 1:
             cycle_length = self.total_steps / self.n_cycle
-            pos_in_cycle = (self.current_step % cycle_length) / cycle_length
-
-        pos_in_cycle = min(pos_in_cycle, 1.0)
-
-        # warmup phase
-        fraction = pos_in_cycle / self.ratio if pos_in_cycle < self.ratio else 1.0
+            pos_in_cycle = (self.current_step % cycle_length)
+            cycle_progress = min(pos_in_cycle / max(cycle_length * self.ratio, 1.0), 1.0)
+        else:
+            # For single cycle, use full progress
+            cycle_progress = min(progress / self.ratio, 1.0) if self.ratio > 0 else 1.0
 
         if self.mode == "linear":
-            return min(fraction, 1.0)
+            beta = min(cycle_progress, 1.0)
         elif self.mode == "sigmoid":
-            # Map pos_in_cycle ∈ [0,1] to sigmoid ∈ [0,1]
-            # Center at 0.5, so at pos_in_cycle=0.5, sigmoid=0.5
             k = 6
-            return 1 / (1 + math.exp(-k * (pos_in_cycle - 0.5)))
+            # scale progress ∈ [0,1] → [-3, +3] for a smooth S curve
+            beta = 1 / (1 + math.exp(-k * (cycle_progress - 0.5)))
+        elif self.mode == "cosine":
+            # Cosine annealing from 0 to 1
+            beta = 0.5 * (1 + math.cos(math.pi * (1 - cycle_progress)))
         else:
             raise ValueError(f"Unknown mode: {self.mode}")
+
+        return min(beta, 1.0)
+
+    def step(self):
+        """Increment the step counter."""
+        self.current_step += 1
+
+    def epoch_step(self):
+        """Increment the epoch counter."""
+        self.current_epoch += 1
+
+#
+# Teacher forcing ratio
+#
+
+def get_teacher_forcing_ratio(epoch, num_epochs, min_tfr=0.6, warmup_fraction=0.3):
+    """
+    Linear decay of teacher forcing ratio (TFR).
+    - Starts at 1.0
+    - Decays to min_tfr by (warmup_fraction * num_epochs)
+    - Then stays flat
+    """
+    warmup_epochs = int(num_epochs * warmup_fraction)
+    if epoch < warmup_epochs:
+        # linearly decay from 1.0 → min_tfr
+        return 1.0 - (1.0 - min_tfr) * (epoch / warmup_epochs)
+    else:
+        return min_tfr
+
 
 #
 # Step 2.4 — Collate Function (Fixed Bug #2: dynamic pad id)
@@ -577,7 +615,7 @@ class SmilesDataset(Dataset):
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 16
 ACCUMULATION_STEPS = 4
-NUM_EPOCHS = 1
+NUM_EPOCHS = 5
 MAX_SEQ_LEN = 128
 KL_ANNEAL_RATIO = 0.3
 
@@ -614,7 +652,7 @@ def train_vae(
             input_ids, lengths = input_ids.to(device), lengths.to(device)
 
             # ← PATCHED: exponential decay per epoch (not per batch, but smoother than linear)
-            tfr = 1.0 * (0.5 ** (epoch / max(1, num_epochs-1)))  # decay from 1.0 → 0.5
+            tfr = get_teacher_forcing_ratio(epoch, num_epochs, min_tfr=0.6, warmup_fraction=0.3)
 
             logits, mu, logvar = model(input_ids, lengths, target_seq=input_ids, teacher_forcing_ratio=tfr)
             beta = kl_annealer.get_beta(increment=True)
@@ -707,14 +745,8 @@ for tokenizer in TOKENIZERS:
     ########################################################################
     # 1. CREATE A FRESH annealer FOR EVERY TOKENIZER
     ########################################################################
-    total_steps = (len(train_smiles) // (BATCH_SIZE*ACCUMULATION_STEPS)) * NUM_EPOCHS
-    kl_annealer = KLAnnealer(
-        total_steps=total_steps,
-        n_cycle=4,               # 4 cycles across all epochs → real cyclical
-        ratio=0.25,              # 25% of each cycle is warmup
-        mode="sigmoid",
-        per_epoch=False
-    )
+    
+
 
     optimizer = Ranger21(
         model.parameters(),
@@ -747,6 +779,17 @@ for tokenizer in TOKENIZERS:
         collate_fn=lambda batch: collate_fn(batch, tokenizer, max_length=MAX_SEQ_LEN),
         num_workers=0,
         pin_memory=True
+    )
+
+    steps_per_epoch = len(train_loader)
+    total_steps = steps_per_epoch * NUM_EPOCHS
+    # total_steps = (len(train_smiles) // (BATCH_SIZE * ACCUMULATION_STEPS)) * NUM_EPOCHS
+    kl_annealer = KLAnnealer(
+        total_steps=total_steps,
+        n_cycle=1,               # REDUCED: 2 cycles instead of 4 for longer warmup per cycle
+        ratio=0.6,               # INCREASED: 60% of each cycle is warmup (was 25%)
+        mode="linear",           # CHANGED: Linear is more predictable than sigmoid
+        per_epoch=False
     )
 
     train_vae(
