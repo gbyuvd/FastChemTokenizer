@@ -124,7 +124,7 @@ tokenizer.decode_with_trace(encoded)
 ```python
 from FastChemTokenizer import FastChemTokenizer
 
-tokenizer = FastChemTokenizer.from_pretrained("./chemtok")
+tokenizer = FastChemTokenizer.from_pretrained("./smitok_core")
 ```
 3. Use like any Hugging Face tokenizer:
 ```python
@@ -262,6 +262,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
