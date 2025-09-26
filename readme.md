@@ -136,7 +136,7 @@ outputs = tokenizer.batch_encode_plus(smiles_list, padding=True, truncation=True
 
 
 ## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP: STILL AT 8K SAMPLES and 1 EPOCH]
-1st Epoch, on ~14K samples of len(token_ids)<=25; embed_dim=64, hidden_dim=128, latent_dim=64, num_layers=2; batch_size= 16 * 4 (grad acc) 
+Using `benchmark_simpler.py`: 1st Epoch, on ~13K samples of len(token_ids)<=25; embed_dim=64, hidden_dim=128, latent_dim=64, num_layers=2; batch_size= 16 * 4 (grad acc) 
 
 Latent Space Visualization based on SMILES Interpolation Validity   
 
@@ -147,29 +147,26 @@ using smitok (with tails)
 ![image](https://cdn-uploads.huggingface.co/production/uploads/667da868d653c0b02d6a2399/-TusjDSYv9J3K-pfb0hqu.png)
 
 ```text
-Loaded 8106 SMILES (assumed pre-canonicalized)
-Validating SMILES with RDKit...
-After RDKit filtering: 8106 valid SMILES
-Train: 6484
-Val:   811
-Test:  811
+Train: 13017
+Val:   1627
+Test:  1628
 
 === Benchmarking ChemBERTa ===
 vocab_size                         : 767
-avg_tokens_per_mol                 : 42.7383
-compression_ratio                  : 1.3739
+avg_tokens_per_mol                 : 25.0359
+compression_ratio                  : 1.3766
 percent_unknown                    : 0.0000
-encode_throughput_smiles_per_sec   : 3844.2028
-decode_throughput_smiles_per_sec   : 15993.9616
+encode_throughput_smiles_per_sec   : 4585.2022
+decode_throughput_smiles_per_sec   : 18168.2779
 decode_reconstruction_accuracy     : 100.0000
 
-=== Benchmarking FastChemTokenizer ===
+=== Benchmarking FastChemTokenizerHF ===
 vocab_size                         : 1238
-avg_tokens_per_mol                 : 21.8288
-compression_ratio                  : 2.6900
+avg_tokens_per_mol                 : 13.5668
+compression_ratio                  : 2.5403
 percent_unknown                    : 0.0000
-encode_throughput_smiles_per_sec   : 37341.6694
-decode_throughput_smiles_per_sec   : 101864.6384
+encode_throughput_smiles_per_sec   : 32005.8686
+decode_throughput_smiles_per_sec   : 29807.3610
 decode_reconstruction_accuracy     : 100.0000
 ```
 
@@ -262,6 +259,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
