@@ -116,6 +116,29 @@ tokenizer.decode_with_trace(encoded)
 #  [005] ID=    1 → '</s>'
 ```
 
+#### BigSMILES (experimental)
+```python
+from FastChemTokenizerHF import FastChemTokenizerSelfies
+
+tokenizer = FastChemTokenizerSelfies.from_pretrained("./bigsmiles-proto") 
+testentry = "*CC(*)c1ccccc1C(=O)OCCCCCC"
+encoded = tokenizer.encode(testentry)
+print("✅ Encoded:", encoded)
+decoded = tokenizer.decode(encoded)
+print("✅ Decoded:", decoded)
+tokenizer.decode_with_trace(encoded)
+
+# ✅ Encoded: [186, 185, 723, 31, 439]
+# ✅ Decoded: *CC(*)c1ccccc1C(=O)OCCCCCC
+# 
+# 🔍 Decoding 5 tokens:
+#   [000] ID=  186 → '*CC(*)'
+#   [001] ID=  185 → 'c1cccc'
+#   [002] ID=  723 → 'c1'
+#   [003] ID=   31 → 'C(=O)OCC'
+#   [004] ID=  439 → 'CCCC'
+```
+
 ## 📦 Installation & Usage
 
 0. Make sure you have all the reqs packages, possibly can be run with different versions
@@ -259,6 +282,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
