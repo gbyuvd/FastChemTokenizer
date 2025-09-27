@@ -158,7 +158,7 @@ outputs = tokenizer.batch_encode_plus(smiles_list, padding=True, truncation=True
 - [ChemMiniQ3-HoriFIE](https://github.com/gbyuvd/ChemMiniQ3-HoriFIE)
 
 
-## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP: STILL AT 8K SAMPLES and 1 EPOCH]
+## 📚 Early VAE Evaluation (vs. ChemBERTa's) [WIP for Scaling]
 Using `benchmark_simpler.py`: 1st Epoch, on ~13K samples of len(token_ids)<=25; embed_dim=64, hidden_dim=128, latent_dim=64, num_layers=2; batch_size= 16 * 4 (grad acc) 
 
 Latent Space Visualization based on SMILES Interpolation Validity   
@@ -282,6 +282,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
