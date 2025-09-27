@@ -118,9 +118,9 @@ tokenizer.decode_with_trace(encoded)
 
 #### BigSMILES (experimental)
 ```python
-from FastChemTokenizer import FastChemTokenizerSelfies
+from FastChemTokenizer import FastChemTokenizer
 
-tokenizer = FastChemTokenizerSelfies.from_pretrained("./bigsmiles-proto") 
+tokenizer = FastChemTokenizer.from_pretrained("./bigsmiles-proto") 
 testentry = "*CC(*)c1ccccc1C(=O)OCCCCCC"
 encoded = tokenizer.encode(testentry)
 print("✅ Encoded:", encoded)
@@ -282,6 +282,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
