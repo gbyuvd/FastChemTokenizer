@@ -95,6 +95,8 @@ tokenizer.decode_with_trace(encoded)
 ```
 
 **for SELFIES**
+Please don't use the old `FastChemTokenizer` for SELFIES, use the HF one
+
 ```python
 from FastChemTokenizerHF import FastChemTokenizerSelfies
 
@@ -284,6 +286,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
