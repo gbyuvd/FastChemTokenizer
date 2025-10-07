@@ -32,7 +32,15 @@ A tentative technical report can be read [here](https://amachinewithorgans.wordp
 ✅ **No indexing errors** (avoids >512 token sequences)  
 ✅ **Zero unknown tokens** on validation set
 
-_Note: Syntax-aware SMILES tokenizer is still in development and hasn't properly optimized and evaluated yet_
+Evaluation for syntax-aware SMILES:
+```
+  Avg time per text: 0.6251 ms ± 0.0251
+  Avg sequence length: 27.51 tokens ± 0.44
+  UNK token rate: 0.0000%
+  Peak memory usage: 47.00 MB
+  Throughput: 1,600 texts/sec
+```
+it’s 5.5× slower. But it delivers shorter sequences, dramatically lower memory use compared to ChemBERTa's, while maintaining strict chemical syntax preservation.
 
 #### SELFIES
 ```
@@ -327,6 +335,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
