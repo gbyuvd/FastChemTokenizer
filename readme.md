@@ -32,6 +32,8 @@ A tentative technical report can be read [here](https://amachinewithorgans.wordp
 ✅ **No indexing errors** (avoids >512 token sequences)  
 ✅ **Zero unknown tokens** on validation set
 
+_Note: Syntax-aware SMILES tokenizer is still in development and hasn't properly optimized and evaluated yet_
+
 #### SELFIES
 ```
 Core's vocab length = 781 (after pruning) 
@@ -72,6 +74,45 @@ for with tails, use `./smitok`
 
 if you want to use HF compat tokenizer (still in devel), please use `FastChemTokenizerHF` 
 
+_Note: Syntax-aware SMILES tokenizer is still in development and hasn't properly optimized and evaluated yet_
+
+**Syntax-aware but slower method:**
+
+```python
+from FastChemTokenizerHF import FastChemTokenizerSmiles
+
+tokenizer = FastChemTokenizerSmiles.from_pretrained("./smitok_syntax")
+
+test_smiles = "O=C1N=C(O)C(Cl)=C1Cl"
+test_ids = tokenizer.encode(test_smiles)
+decoded = tokenizer.decode(test_ids)
+print(f"🧪 Test encode/decode: '{test_smiles}' → {test_ids} → '{decoded}'")
+encoded = tokenizer.encode(text)
+decoded = tokenizer.decode_with_trace(encoded)
+print(decoded)
+
+# ✅ Special tokens bound: 0 1 2 3 4
+# 🧪 Test encode/decode: 'O=C1N=C(O)C(Cl)=C1Cl' → [0, 114, 183, 204, 195, 205, 197, 204, 208, 205, 183, 200, 208, 1] → '<s>O=C1N=C(O)C(Cl)=C1Cl</s>'
+# 
+# 🔍 Decoding 14 tokens:
+#   [000] ID=    0 → '<s>'
+#   [001] ID=  114 → 'O=C1N'
+#   [002] ID=  183 → '=C'
+#   [003] ID=  204 → '('
+#   [004] ID=  195 → 'O'
+#   [005] ID=  205 → ')'
+#   [006] ID=  197 → 'C'
+#   [007] ID=  204 → '('
+#   [008] ID=  208 → 'Cl'
+#   [009] ID=  205 → ')'
+#   [010] ID=  183 → '=C'
+#   [011] ID=  200 → '1'
+#   [012] ID=  208 → 'Cl'
+#   [013] ID=    1 → '</s>'
+```
+
+**Non-syntax-aware but faster method:**
+
 ```python
 from FastChemTokenizer import FastChemTokenizer
 
@@ -90,7 +131,6 @@ tokenizer.decode_with_trace(encoded)
 #   [000] ID=  271 → 'c1ccc'
 #   [001] ID=  474 → 'cc'
 #   [002] ID=  840 → '1'
-
 
 ```
 
@@ -287,6 +327,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
