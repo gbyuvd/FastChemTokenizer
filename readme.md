@@ -87,7 +87,7 @@ test_smiles = "O=C1N=C(O)C(Cl)=C1Cl"
 test_ids = tokenizer.encode(test_smiles)
 decoded = tokenizer.decode(test_ids)
 print(f"🧪 Test encode/decode: '{test_smiles}' → {test_ids} → '{decoded}'")
-encoded = tokenizer.encode(text)
+encoded = tokenizer.encode(test_smiles)
 decoded = tokenizer.decode_with_trace(encoded)
 print(decoded)
 
@@ -327,6 +327,7 @@ Apache 2.0
 }
 ```
 ---
+
 
 
 
