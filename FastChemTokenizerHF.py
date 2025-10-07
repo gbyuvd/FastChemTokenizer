@@ -463,6 +463,47 @@ class FastChemTokenizer(PreTrainedTokenizerBase):
             token = self.id_to_token.get(tid, self.unk_token)
             tid_str = "None" if tid is None else f"{tid:5d}"
             print(f"  [{i:03d}] ID={tid_str} → '{token}'")
+    
+    def pad(
+        self,
+        encoded_inputs,
+        padding=True,
+        max_length=None,
+        pad_to_multiple_of=None,
+        return_tensors=None,
+        **kwargs,
+    ):
+        """
+        HuggingFace-style pad. Takes a list/dict of encoded inputs and pads them.
+        """
+        if isinstance(encoded_inputs, dict):
+            encoded_inputs = [encoded_inputs]
+
+        input_ids = [ei["input_ids"] for ei in encoded_inputs]
+        attn_masks = [ei.get("attention_mask", [1]*len(ei["input_ids"])) for ei in encoded_inputs]
+
+        # determine pad length
+        max_len = max(len(ids) for ids in input_ids)
+        if pad_to_multiple_of:
+            max_len = ((max_len + pad_to_multiple_of - 1) // pad_to_multiple_of) * pad_to_multiple_of
+        if max_length is not None:
+            max_len = min(max_len, max_length)
+
+        padded_ids, padded_masks = [], []
+        for ids, mask in zip(input_ids, attn_masks):
+            pad_len = max_len - len(ids)
+            if self.padding_side == "right":
+                padded_ids.append(ids + [self.pad_token_id] * pad_len)
+                padded_masks.append(mask + [0] * pad_len)
+            else:
+                padded_ids.append([self.pad_token_id] * pad_len + ids)
+                padded_masks.append([0] * pad_len + mask)
+
+        out = {"input_ids": padded_ids, "attention_mask": padded_masks}
+        if return_tensors in ["pt", "torch"]:
+            out = {k: torch.tensor(v, dtype=torch.long) for k, v in out.items()}
+        return out
+
 
     # ------------------------------
     # Save / Load
@@ -506,6 +547,121 @@ class FastChemTokenizer(PreTrainedTokenizerBase):
             raise NotImplementedError("Loading from Hub not implemented yet")
 
 
+# ------------------------------
+# Syntax-Aware SMILES variant (Slower)
+# ------------------------------
+import re
+from typing import List
+
+class FastChemTokenizerSmiles(FastChemTokenizer):
+    """
+    SMILES-specific tokenizer that uses chemically-aware regex tokenization.
+    """
+
+    # Chemically valid token regex (longest-first by alternation order)
+    _TOKENIZER_RE = re.compile(
+        r"\[[^\]]+\]|"                    # [C@H], [nH+], etc.
+        r"\(\[[^\]]+\]\)|"                # ([C@H])
+        r"(?:Cl|Br|Si|Se|Na|Mg|Ca|Fe|Al|K|Li|Be|Ba|Sr|Zn|Cu|Ni|Mn|Co|Cr|V|Ti|Sc|Y|Zr|Nb|Mo|Tc|Ru|Rh|Pd|Ag|Cd|In|Sn|Sb|Te|I|Xe|Cs|Ba|La|Ce|Pr|Nd|Pm|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu|Hf|Ta|W|Re|Os|Ir|Pt|Au|Hg|Tl|Pb|Bi|Po|At|Rn|Fr|Ra|Ac|Th|Pa|U|Np|Pu|Am|Cm|Bk|Cf|Es|Fm|Md|No|Lr)|"
+        r"."                               # everything else as single char (including '(', ')', '1', '2', etc.)
+    )
+
+    @staticmethod
+    def _tokenize_smiles(smiles: str) -> List[str]:
+        """Split SMILES into chemically valid atomic tokens."""
+        return [m.group(0) for m in FastChemTokenizerSmiles._TOKENIZER_RE.finditer(smiles)]
+
+    def _encode_core(self, text: str) -> List[int]:
+        # Step 1: Get atomic tokens with their start/end indices
+        atomic_tokens = []
+        atomic_ends = []  # end positions of each atomic token
+        last_end = 0
+        for match in self._TOKENIZER_RE.finditer(text):
+            token = match.group(0)
+            start, end = match.span()
+            # Ensure no gaps (shouldn't happen with . regex)
+            if start != last_end:
+                # Handle gap (e.g., malformed SMILES)
+                gap = text[last_end:start]
+                for c in gap:
+                    atomic_tokens.append(c)
+                    atomic_ends.append(last_end + 1)
+                    last_end += 1
+            atomic_tokens.append(token)
+            atomic_ends.append(end)
+            last_end = end
+        
+        # Add any trailing characters (shouldn't happen)
+        if last_end < len(text):
+            for c in text[last_end:]:
+                atomic_tokens.append(c)
+                atomic_ends.append(last_end + 1)
+                last_end += 1
+
+        # Step 2: Build a set of valid end positions (atomic boundaries)
+        atomic_end_set = set(atomic_ends)
+
+        # Step 3: Greedy longest-match, but only stop at atomic boundaries
+        result_ids = []
+        i = 0
+        n = len(text)
+        
+        while i < n:
+            # Find the longest substring starting at i that:
+            # (a) ends at an atomic boundary, and
+            # (b) is in vocab
+            best_end = i
+            best_id = None
+            
+            # We only need to check up to the next few atomic boundaries
+            # Find all atomic ends >= i
+            candidate_ends = [end for end in atomic_ends if end > i]
+            
+            # Try longest first
+            for end in reversed(candidate_ends):
+                if end > n:
+                    continue
+                candidate = text[i:end]
+                if candidate in self.token_to_id:
+                    best_end = end
+                    best_id = self.token_to_id[candidate]
+                    break  # longest match found
+            
+            if best_id is not None:
+                result_ids.append(best_id)
+                i = best_end
+            else:
+                # Fallback: take first atomic token starting at i
+                # Find the first atomic token that starts at or after i
+                for j, (tok, end) in enumerate(zip(atomic_tokens, atomic_ends)):
+                    if end > i:
+                        # This token covers position i
+                        tid = self.token_to_id.get(tok, self.unk_token_id)
+                        result_ids.append(tid)
+                        i = end
+                        break
+                else:
+                    # Last resort: single char
+                    tid = self.token_to_id.get(text[i], self.unk_token_id)
+                    result_ids.append(tid)
+                    i += 1
+        
+        return result_ids        
+
+    def decode(self, token_ids, skip_special_tokens=False, **kwargs):
+        """Decode without spaces (SMILES is a continuous string)."""
+        if isinstance(token_ids, torch.Tensor):
+            token_ids = token_ids.tolist()
+        special_ids = {self.bos_token_id, self.eos_token_id, self.pad_token_id, self.mask_token_id}
+        tokens = [
+            self.id_to_token.get(tid, self.unk_token)
+            for tid in token_ids
+            if not (skip_special_tokens and tid in special_ids)
+        ]
+        return "".join(tokens)
+
+    def convert_tokens_to_string(self, tokens: List[str]) -> str:
+        return "".join(tokens)
 # ------------------------------
 # SELFIES variant
 # ------------------------------
